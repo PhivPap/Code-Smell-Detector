@@ -32,6 +32,7 @@
 *.app
 Testfiles/.vscode/settings.json
 GraphVisualizer/node_modules
+.vscode
 
 
 GraphVisualizer/.vscode/launch.json
@@ -42,3 +43,5 @@ IngoredNamespaces.txt
 compile_commands.json
 CodeSmellDetector/node_modules
 CodeSmellDetector/code-smell-detector-GUI/node_modules/*
+
+.vscode

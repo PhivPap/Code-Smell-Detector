@@ -3,8 +3,10 @@
 #include <string>
 #include <unordered_map>
 #include <map>
+#include <list>
 #include <cassert>
-#include <Vector>
+#include <vector>
+#include <algorithm>
 #include "json/writer.h"
 
 #define ID_T std::string 
@@ -26,7 +28,6 @@ namespace dependenciesMining {
 		TemplateInstantiationSpecialization,
 		TemplatePartialSpecialization
 	};
-
 
 	enum class MethodType {
 		Undefined = -1,
@@ -65,7 +66,7 @@ namespace dependenciesMining {
 	public:
 		SourceInfo() = default;
 		SourceInfo(const std::string& fileName, int line, int column) : fileName(fileName), line(line), column(column) {};
-		std::string GetFileName() const;
+		const std::string& GetFileName() const;
 		int GetLine() const;
 		int GetColumn() const;
 		std::string toString() const;
@@ -80,6 +81,10 @@ namespace dependenciesMining {
 		bool  operator>=(SourceInfo const& loc) const;
 		bool  operator==(SourceInfo const& loc) const;		
 	};
+
+	inline bool operator!=(const SourceInfo& lhs, const SourceInfo& rhs) {
+		return !(lhs == rhs);
+	}
 
 	// ----------------------------------------------------------------------------------------
 
@@ -96,14 +101,16 @@ namespace dependenciesMining {
 		Symbol() = default; 
 		Symbol(ClassType classType) : classType(classType) {};
 		Symbol(const ID_T& id, const std::string& name, const std::string& nameSpace = "", ClassType classType = ClassType::Undefined, const std::string& fileName = "", int line = -1, int column = -1)
-			: id(id), name(name), nameSpace(nameSpace), classType(classType), srcInfo(SourceInfo(fileName, line, column)) {};
+			: id(id), name(name), nameSpace(nameSpace), classType(classType), srcInfo(fileName, line, column) {};
+		
+		virtual ~Symbol() = default;
 
-		virtual ID_T GetID() const;
-		virtual std::string GetName() const;
+		virtual const ID_T& GetID() const;
+		virtual const std::string& GetName() const;
 		virtual ClassType GetClassType() const;
-		virtual std::string GetClassTypeAsString() const;
+		virtual const char* GetClassTypeAsString() const;
 		virtual const SourceInfo& GetSourceInfo() const;
-		virtual std::string GetNamespace() const;
+		virtual const std::string& GetNamespace() const;
 		const char* GetAccessTypeStr() const;
 		AccessType GetAccessType() const;
 
@@ -114,7 +121,6 @@ namespace dependenciesMining {
 		virtual void SetSourceInfo(const std::string& fileName, int line, int column);
 		virtual void SetNamespace(const std::string& nameSpace);
 		void SetAccessType(const AccessType& access_type);
-		
 	};
 
 	// ----------------------------------------------------------------------------------------
@@ -124,12 +130,20 @@ namespace dependenciesMining {
 		std::unordered_map<ID_T, Symbol*> byID;
 		std::unordered_map<std::string, std::list<Symbol*>> byName;
 	public:
+		using Size = std::unordered_map<ID_T, Symbol*>::size_type;
+
+		bool IsEmpty() const { return byID.empty(); }
+		Size GetSize() const { return byID.size(); }
+
 		Symbol* Install(const ID_T& id, const std::string& name, const ClassType& type = ClassType::Structure);		// TO FIX
 		Symbol* Install(const ID_T& id, const Symbol& symbol);
 		Symbol* Install(const ID_T& id, const Structure& symbol);
 		Symbol* Install(const ID_T& id, const Method& symbol);
 		Symbol* Install(const ID_T& id, const Definition& symbol);
 		Symbol* Install(const ID_T& id, Symbol* symbol);
+
+		Symbol* Install2(const ID_T& id, const Structure& symbol); // cause of Install implementation, didnt want to break anything
+
 		Symbol* Lookup(const ID_T& id);
 		//Symbol* Lookup(const std::string& name);
 		const Symbol* Lookup(const ID_T& id) const;
@@ -137,14 +151,18 @@ namespace dependenciesMining {
 
 		void Print();
 		void Print2(int level);
-		Json::Value GetJsonStructure(dependenciesMining::Structure* structure);
-		Json::Value GetJsonMethod(dependenciesMining::Method* method);
-		Json::Value GetJsonDefinition(dependenciesMining::Definition* definition);
-		void AddJsonStructure(dependenciesMining::Structure* structure, Json::Value& json_structure);
-		void AddJsonMethod(dependenciesMining::Method* method, Json::Value& json_method);
-		void AddJsonDefinition(dependenciesMining::Definition* definition, Json::Value& json_definition);
-		void AddJsonSymbolTable(Json::Value& st);
+
+		Json::Value GetJsonStructure(Structure* structure);
+		Json::Value GetJsonMethod(Method* method);
+		Json::Value GetJsonDefinition(Definition* definition);
+
+		void AddJsonStructure(Structure* structure, Json::Value& json_structure) const;
+		void AddJsonMethod(Method* method, Json::Value& json_method) const;
+		void AddJsonDefinition(Definition* definition, Json::Value& json_definition) const;
+		void AddJsonSymbolTable(Json::Value& st) const;
+
 		Json::Value GetJsonSymbolTable(void);
+
 		void Accept(STVisitor* visitor);
 		void Accept(STVisitor* visitor) const;
 
@@ -158,7 +176,6 @@ namespace dependenciesMining {
 		iterator end() { return byID.end(); }
 
 		const_iterator end() const { return byID.end(); }
-
 	};
 
 	// ----------------------------------------------------------------------------------------
@@ -172,17 +189,17 @@ namespace dependenciesMining {
 		Template() = default;
 
 		Parent_T* GetParent() const;
-		SymbolTable GetArguments() const;
+		const SymbolTable& GetArguments() const;
 		void SetParent(Parent_T* structure); 
-		Symbol* InstallArguments(const ID_T& id, Structure* structure);
+		Symbol* InstallArgument(const ID_T& id, Structure* structure);
 	};
 
 	// ----------------------------------------------------------------------------------------
 
 	class Definition : public Symbol {
 	private:
-		Structure* type = nullptr;
-		std::string full_type = "";
+		Structure* type = nullptr;	// Definition type, can be nullptr in case of non-user-defined types.
+		std::string full_type = "";	// Full definition type.
 
 	public:
 		Definition() : Symbol(ClassType::Definition) {};
@@ -191,9 +208,11 @@ namespace dependenciesMining {
 		Definition(const ID_T& id, const std::string& name, const std::string& nameSpace, Structure* type, const std::string& fileName, int line, int column)
 			: Symbol(id, name, nameSpace, ClassType::Definition, fileName, line, column), type(type) {};
 
+		virtual ~Definition() override = default;
+
 		bool isStructure() const;
 		const Structure* GetType() const;
-		std::string GetFullType() const;
+		const std::string& GetFullType() const;
 		void SetType(Structure* structure);
 		void SetFullType(const std::string& type);
 	};
@@ -217,7 +236,7 @@ namespace dependenciesMining {
 		public:
 			Member() = default;
 			Member(const std::string& name, Structure* type, SourceInfo locEnd, MemberType memType = Value_mem_t) : name(name), type(type), locEnd(locEnd), memType(memType) {};
-			std::string GetName() const;
+			const std::string& GetName() const;
 			SourceInfo GetLocEnd() const;
 			Structure* GetType() const;
 			MemberType GetMemberType() const;
@@ -258,20 +277,23 @@ namespace dependenciesMining {
 		int max_scope_depth = 0;
 		int line_count = 0;
 		bool is_virtual;
+	
 	public:
 		Method() : Symbol(ClassType::Method) {};
 		Method(const ID_T& id, const std::string& name, const std::string& nameSpace = "") : Symbol(id, name, nameSpace, ClassType::Method) {};
 		Method(const ID_T& id, const std::string& name, const std::string& nameSpace, const std::string& fileName, int line, int column)
 			: Symbol(id, name, nameSpace, ClassType::Method, fileName, line, column) {};
 
+		virtual ~Method() override = default;
+		
 		MethodType GetMethodType() const;
-		std::string GetMethodTypeAsString() const;
+		const char* GetMethodTypeAsString() const;
 		Structure* GetReturnType() const;
 
-		SymbolTable GetArguments() const;
-		SymbolTable GetDefinitions() const;
-		SymbolTable GetTemplateArguments() const;
-		std::map<std::string, MemberExpr> GetMemberExpr() const;
+		const SymbolTable& GetArguments() const;
+		const SymbolTable& GetDefinitions() const;
+		const SymbolTable& GetTemplateArguments() const;
+		const std::map<std::string, MemberExpr>& GetMemberExpr() const;
 		int GetLiterals() const;
 		int GetStatements() const;
 		int GetBranches() const;
@@ -290,9 +312,9 @@ namespace dependenciesMining {
 		void SetLineCount(int line_count);
 		void SetVirtual(bool is_virtual);
 
-		void InstallArg(const ID_T& id, const Definition& definition);
-		void InstallDefinition(const ID_T& id, const Definition& definition);
-		void InstallTemplateSpecializationArguments(const ID_T& id, Structure* structure);
+		Symbol* InstallArg(const ID_T& id, const Definition& definition);
+		Symbol* InstallDefinition(const ID_T& id, const Definition& definition);
+		Symbol* InstallTemplateSpecializationArgument(const ID_T& id, Structure* structure);
 
 		void InsertMemberExpr(MemberExpr const& memberExpr, Member const& member, const std::string& locBegin);
 		void UpdateMemberExpr(MemberExpr const& memberExpr, const std::string& locBegin);
@@ -322,25 +344,29 @@ namespace dependenciesMining {
 		SymbolTable contains; 
 		SymbolTable friends;	// About Structures: Key->structureID, Value->Structure*
 								// About Methods: Key->methodID, Value->Structure* (the parent Class which owns this method)
+	
 	public:
 		Structure() : Symbol(ClassType::Structure) {};
+		Structure(const ID_T& id) : Symbol{id, id, "",  ClassType::Structure} {}
 		Structure(const ID_T& id, const std::string& name, const std::string& nameSpace = "", StructureType structureType = StructureType::Undefined)
 			: Symbol(id, name, nameSpace, ClassType::Structure), structureType(structureType) {};
 		Structure(const ID_T& id, const std::string& name, const std::string& nameSpace, StructureType structureType, const std::string& fileName, int line, int column)
 			: Symbol(id, name, nameSpace, ClassType::Structure, fileName, line, column), structureType(structureType) {};
 		Structure(const Structure& s); 
+
+		virtual ~Structure() override = default;
 		
 		StructureType GetStructureType() const;
-		std::string GetStructureTypeAsString() const;
+		const char* GetStructureTypeAsString() const;
 		Structure* GetTemplateParent() const;
 		Structure* GetNestedParent() const;
 
-		SymbolTable GetMethods() const; 
-		SymbolTable GetFields() const; 
-		SymbolTable GetBases() const; 
-		SymbolTable GetContains() const;
-		SymbolTable GetFriends() const;
-		SymbolTable GetTemplateArguments() const; 
+		const SymbolTable& GetMethods() const; 
+		const SymbolTable& GetFields() const; 
+		const SymbolTable& GetBases() const; 
+		const SymbolTable& GetContains() const;
+		const SymbolTable& GetFriends() const;
+		const SymbolTable& GetTemplateArguments() const; 
 
 		void SetStructureType(const StructureType& structureType);
 		void SetTemplateParent(Structure* structure);
@@ -353,7 +379,7 @@ namespace dependenciesMining {
 		Symbol* InstallBase(const ID_T& id, Structure* structure);
 		Symbol* InstallNestedClass(const ID_T& id, Structure* structure);
 		Symbol* InstallFriend(const ID_T& id, Structure* structure);
-		Symbol* InstallTemplateSpecializationArguments(const ID_T& id, Structure* structure);
+		Symbol* InstallTemplateSpecializationArgument(const ID_T& id, Structure* structure);
 
 		bool IsTemplateDefinition() const;
 		bool IsTemplateFullSpecialization() const;
@@ -367,4 +393,5 @@ namespace dependenciesMining {
 	/*class Fundamental : public Symbol {
 
 	};*/
+
 }

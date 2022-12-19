@@ -1,10 +1,13 @@
 #pragma once
+
 #include <list>
 #include <string>
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <stack>
+#include <unordered_map>
+#include <memory>
 
 namespace dependenciesMining {
 	
